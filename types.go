@@ -10,14 +10,6 @@ var (
 )
 
 type ClockStatus int
-
-// var (
-// 	ContactTypeCustomer ContactTypes = 2
-// 	ContactTypeSupplier ContactTypes = 3
-// )
-
-// type ContactTypes int
-
 type ClockingPostRequest struct {
 	Root Root `xml:"Root"`
 }
@@ -41,10 +33,6 @@ type Record struct {
 	ActualMinutes string      `xml:"ActualMinutes"`
 	Notes         string      `xml:"Notes"`
 }
-
-// type ClockingPostResponse struct {
-// }
-//
 
 type ClockingPostResponse struct {
 	XMLName          xml.Name `xml:"Result"`

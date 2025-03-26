@@ -318,7 +318,7 @@ func (c *Client) Unmarshal(r io.Reader, vv ...interface{}) error {
 func CheckResponse(r *http.Response) error {
 	errorResponse := &ErrorResponse{Response: r}
 
-	if c := r.StatusCode; (c >= 200 && c <= 299) || c == 400 {
+	if c := r.StatusCode; c >= 200 && c <= 299 {
 		return nil
 	}
 
@@ -360,150 +360,79 @@ func (r *StatusErrorResponse) Error() string {
 	return ""
 }
 
-// <Result xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" DateTime="SUBMISSIONDATETIME">
-// 		<OrganisationId>ACDCXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX</OrganisationId>
-// 		<ProcessedRecords>1</ProcessedRecords>
-// 		<SubmittedRecords>3</SubmittedRecords>
-// 		<Error>Could not find employee XYZ</Error>
-// 		<Error>Could not find location ABC</Error>
+// <Result xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+//     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" DateTime="2025-03-26T08:30:00Z">
+//     <OrganisationId>ACDC1805-90E9-C27F-5467-4763F3C19B19</OrganisationId>
+//     <ProcessedRecords>0</ProcessedRecords>
+//     <SubmittedRecords>2</SubmittedRecords>
+//     <InvalidRecord>
+//         <EmpNo />
+//         <Location>SCDEMO1</Location>
+//         <ClockStatus>1</ClockStatus>
+//         <CheckIn>2025-03-25T08:30:00Z</CheckIn>
+//         <CheckOut>0001-01-01T00:00:00Z</CheckOut>
+//         <Notes />
+//     </InvalidRecord>
+//     <InvalidRecord>
+//         <EmpNo />
+//         <Location>SCDEMO1</Location>
+//         <ClockStatus>2</ClockStatus>
+//         <CheckIn>0001-01-01T00:00:00Z</CheckIn>
+//         <CheckOut>2025-03-26T18:30:00Z</CheckOut>
+//         <Notes />
+//     </InvalidRecord>
+//     <DeletedRecords>0</DeletedRecords>
 // </Result>
 
 type ErrorResponse struct {
 	// HTTP response that caused this error
-	Response     *http.Response
-	Result       Result `xml:"Result"`
-	ErrorMessage struct {
-		XMLName xml.Name `xml:"Error"`
-		Message string   `xml:"Message"`
-	}
-}
-
-type Result struct {
-	XMLName          xml.Name `xml:"Result"`
-	Text             string   `xml:",chardata"`
-	X                string   `xml:"x,attr"`
-	Sd               string   `xml:"sd,attr"`
-	Xsi              string   `xml:"xsi,attr"`
-	DateTime         string   `xml:"DateTime,attr"`
-	OrganisationId   string   `xml:"OrganisationId"`
-	ProcessedRecords string   `xml:"ProcessedRecords"`
-	SubmittedRecords string   `xml:"SubmittedRecords"`
-	Error            []string `xml:"Error"`
+	Response         *http.Response
+	Message          string          `xml:"Message"`
+	XMLName          xml.Name        `xml:"Result"`
+	DateTime         string          `xml:"DateTime,attr"`
+	OrganisationId   string          `xml:"OrganisationId"`
+	ProcessedRecords string          `xml:"ProcessedRecords"`
+	SubmittedRecords string          `xml:"SubmittedRecords"`
+	InvalidRecord    []InvalidRecord `xml:"InvalidRecord"`
+	DeletedRecords   string          `xml:"DeletedRecords"`
 }
 
 func (r *ErrorResponse) Error() string {
 	var errs *multierror.Error
-	for _, m := range r.Result.Error {
-		errs = multierror.Append(errs, errors.New(m))
+
+	if r.Message != "" {
+		errs = multierror.Append(errs, fmt.Errorf("Message: %s", r.Message))
 	}
 
-	// Add message error
-	if r.ErrorMessage.Message != "" {
-		errs = multierror.Append(errs, fmt.Errorf("Message: %s", r.ErrorMessage.Message))
+	if r.Response != nil && r.Response.StatusCode != 200 {
+		errs = multierror.Append(errs, fmt.Errorf("Status: %s", r.Response.Status))
+	}
+
+	if len(r.InvalidRecord) > 0 {
+		for _, record := range r.InvalidRecord {
+			errorMsg := fmt.Sprintf("Invalid record - EmpNo: '%s', Location: '%s', Status: %s - CheckIn: %s, CheckOut: %s, Notes: %s",
+				record.EmpNo, record.Location, record.ClockStatus, record.CheckIn, record.CheckOut, record.Notes)
+			errs = multierror.Append(errs, errors.New(errorMsg))
+		}
 	}
 
 	if errs == nil {
 		return ""
 	}
+
 	return errs.Error()
 }
 
-// {
-//   "errors": {
-//       "sequenceId": [
-//           "Error converting value \"\" to type 'System.Guid'. Path 'sequenceId', line 1, position 338."
-//       ]
-//   },
-//   "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-//   "title": "One or more validation errors occurred.",
-//   "status": 400,
-//   "traceId": "00-3c171ea3c263877259335dc4a4a1b970-ad0f4ea6ae7a2ebe-00"
-// }
-
-// type ErrorResponse struct {
-// 	// HTTP response that caused this error
-// 	Response *http.Response
-
-// 	ValidationErrors []ValidationError
-// 	Errors           Errors `json:"errors"`
-// 	Message          string `json:"message"`
-// 	Type             string `json:"type"`
-// 	Title            string `json:"title"`
-// 	Status           int    `json:"status"`
-// 	TraceID          string `json:"traceId"`
-// }
-
-// type Errors struct {
-// 	SequenceID []string `json:"sequenceId"`
-// }
-
-// func (r *ErrorResponse) UnmarshalJSON(data []byte) error {
-// 	var validationErrors []ValidationError
-// 	if err := json.Unmarshal(data, &validationErrors); err == nil {
-// 		r.ValidationErrors = validationErrors
-// 		return nil
-// 	}
-
-// 	type Alias ErrorResponse
-// 	aux := &struct {
-// 		*Alias
-// 	}{
-// 		Alias: (*Alias)(r),
-// 	}
-
-// 	return json.Unmarshal(data, &aux)
-// }
-
-// func (r *ErrorResponse) Error() string {
-// 	var result *multierror.Error
-
-// 	// Collect validation errors
-// 	for _, v := range r.ValidationErrors {
-// 		if v.ErrorCode != nil && v.Message != "" {
-// 			result = multierror.Append(result, fmt.Errorf("ErrorCode: %d, Message: %s", *v.ErrorCode, v.Message))
-// 		}
-// 	}
-
-// 	// Add sequence ID errors
-// 	for _, seq := range r.Errors.SequenceID {
-// 		result = multierror.Append(result, fmt.Errorf("%s", seq))
-// 	}
-
-// 	// Add title error
-// 	if r.Title != "" {
-// 		result = multierror.Append(result, fmt.Errorf("%d: %s", r.Status, r.Title))
-// 	}
-
-// 	// Add message error
-// 	if r.Message != "" {
-// 		result = multierror.Append(result, errors.New(r.Message))
-// 	}
-
-// 	if result == nil {
-// 		return ""
-// 	}
-
-// 	return result.Error()
-// }
-
-// // [
-// //
-// //	{
-// //	  "errorCode": 1001004,
-// //	  "errorScopeId": "9ab8f26a-e31d-4b36-b3f3-26c5c5340abd",
-// //	  "message": "Invalid Voucher type, valid Values (Unspecified,SupplierInvoice,AutoVat,SupplierInvoicePayment,CustomerInvoice,CustomerInvoicePayment",
-// //	  "sequentialId": "00000000-0000-0000-0000-000000000000"
-// //	}
-// //
-// // ]
-// type ValidationError struct {
-// 	ErrorCode    *int   `json:"errorCode"`
-// 	ErrorScopeID string `json:"errorScopeId"`
-// 	Message      string `json:"message"`
-// 	Reference    string `json:"reference"`
-// 	SequentialID string `json:"sequentialId"`
-// 	SourceHint   string `json:"sourceHint"`
-// }
+type InvalidRecord struct {
+	XMLName     xml.Name `xml:"InvalidRecord"`
+	Text        string   `xml:",chardata"`
+	EmpNo       string   `xml:"EmpNo"`
+	Location    string   `xml:"Location"`
+	ClockStatus string   `xml:"ClockStatus"`
+	CheckIn     string   `xml:"CheckIn"`
+	CheckOut    string   `xml:"CheckOut"`
+	Notes       string   `xml:"Notes"`
+}
 
 func checkContentType(response *http.Response) error {
 	header := response.Header.Get("Content-Type")
