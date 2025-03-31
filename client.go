@@ -381,6 +381,8 @@ func (r *StatusErrorResponse) Error() string {
 //         <CheckOut>2025-03-26T18:30:00Z</CheckOut>
 //         <Notes />
 //     </InvalidRecord>
+//     <Error>Could not find employee [9999999999]</Error>
+//     <Error>Could not find employee [9999999999]</Error>
 //     <DeletedRecords>0</DeletedRecords>
 // </Result>
 
@@ -394,6 +396,7 @@ type ErrorResponse struct {
 	ProcessedRecords string          `xml:"ProcessedRecords"`
 	SubmittedRecords string          `xml:"SubmittedRecords"`
 	InvalidRecord    []InvalidRecord `xml:"InvalidRecord"`
+	Errors           []string        `xml:"Error"`
 	DeletedRecords   string          `xml:"DeletedRecords"`
 }
 
@@ -413,6 +416,12 @@ func (r *ErrorResponse) Error() string {
 			errorMsg := fmt.Sprintf("Invalid record - EmpNo: '%s', Location: '%s', Status: %s - CheckIn: %s, CheckOut: %s, Notes: %s",
 				record.EmpNo, record.Location, record.ClockStatus, record.CheckIn, record.CheckOut, record.Notes)
 			errs = multierror.Append(errs, errors.New(errorMsg))
+		}
+	}
+
+	if len(r.Errors) > 0 {
+		for _, error := range r.Errors {
+			errs = multierror.Append(errs, errors.New(error))
 		}
 	}
 
